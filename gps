@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Indoor - Casa do Dan</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
+        #webcam-container { margin: 15px auto; border: 4px solid #00ff88; border-radius: 15px; overflow: hidden; width: 300px; height: 300px; }
+        select, button { padding: 15px; font-size: 16px; border-radius: 10px; border: none; margin: 10px; width: 100%; max-width: 300px; }
+        button { background: #00ff88; color: black; font-weight: bold; cursor: pointer; }
+        .status { background: #222; padding: 15px; border-radius: 10px; margin-top: 10px; border-left: 5px solid #00ff88; }
+    </style>
+</head>
+<body>
+
+    <h1>IA Narradora - Guia Residencial</h1>
+    
+    <label for="destino">Para onde você quer ir?</label><br>
+    <select id="destino" onchange="mudarDestino(this.value)">
+        <option value="Banheiro">Banheiro</option>
+        <option value="Quarto Dan 1">Quarto Dan 1</option>
+        <option value="Quarto Jaque 2">Quarto Jaque 2</option>
+        <option value="Quarto Pais 3">Quarto Pais 3</option>
+        <option value="Cozinha">Cozinha</option>
+        <option value="Sala">Sala</option>
+    </select>
+
+    <button onclick="init()">ATIVAR NAVEGAÇÃO</button>
+
+    <div id="webcam-container"></div>
+    
+    <div class="status">
+        <p><strong>Onde estou:</strong> <span id="local-atual">Aguardando...</span></p>
+        <p><strong>Próximo Passo:</strong> <span id="instrucao-texto">Ligue a câmera</span></p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+    <script>
+        const URL = "https://teachablemachine.withgoogle.com/models/7MYV3ZQDM/";
+        let model, webcam, localAtualIA = "", destinoSelecionado = "Banheiro", ultimaFala = "";
+
+        // GRAFO: Conexões e Distâncias baseadas na sua imagem
+        const grafoCasa = {
+    "Portão": { "Entrada": 1 },
+    "Entrada": { "Portão": 1, "AREA": 2 },
+    "AREA": { "Entrada": 2, "corredor": 3, "cozinha": 2 },
+    "cozinha": { "AREA": 2, "Despensa": 1, "Sala": 2 },
+    "Despensa": { "cozinha": 1 },
+    "Sala": { "cozinha": 2, "corredor": 1 },
+    "corredor": { 
+        "AREA": 3, 
+        "Sala": 1, 
+        "Quarto DAN": 2, 
+        "Quarto jaque": 3, 
+        "banheiro": 2 
+    },
+    "Quarto DAN": { "corredor": 2 },
+    "Quarto jaque": { "corredor": 3 },
+    "banheiro": { "corredor": 2 }
+};
+
+        async function init() {
+            model = await tmImage.load(URL + "model.json", URL + "metadata.json");
+            webcam = new tmImage.Webcam(300, 300, true);
+            await webcam.setup({ facingMode: "environment" });
+            await webcam.play();
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            window.requestAnimationFrame(loop);
+            falar("Sistema de navegação iniciado. Destino definido para " + destinoSelecionado);
+        }
+
+        async function loop() {
+            webcam.update();
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        function mudarDestino(val) {
+            destinoSelecionado = val;
+            falar("Destino alterado para " + val);
+            localAtualIA = ""; // Força recálculo
+        }
+
+        async function predict() {
+            const prediction = await model.predict(webcam.canvas);
+            let melhorClasse = "";
+            let maxProb = 0;
+
+            for (let i = 0; i < model.getTotalClasses(); i++) {
+                if (prediction[i].probability > 0.90) {
+                    melhorClasse = prediction[i].className;
+                }
+            }
+
+            if (melhorClasse !== "" && melhorClasse !== localAtualIA) {
+                localAtualIA = melhorClasse;
+                document.getElementById("local-atual").innerText = localAtualIA;
+                
+                const rota = encontrarDijkstra(localAtualIA, destinoSelecionado);
+                processarInstrucao(rota);
+            }
+        }
+
+        function encontrarDijkstra(inicio, fim) {
+            let dists = {}, pais = {}, fila = new Set();
+            for (let no in grafoCasa) { dists[no] = Infinity; pais[no] = null; fila.add(no); }
+            dists[inicio] = 0;
+
+            while (fila.size > 0) {
+                let u = null;
+                for (let no of fila) if (u === null || dists[no] < dists[u]) u = no;
+                if (u === fim || dists[u] === Infinity) break;
+                fila.delete(u);
+                for (let v in grafoCasa[u]) {
+                    let alt = dists[u] + grafoCasa[u][v];
+                    if (alt < dists[v]) { dists[v] = alt; pais[v] = u; }
+                }
+            }
+            let caminho = [], p = fim;
+            while (p) { caminho.unshift(p); p = pais[p]; }
+            return caminho;
+        }
+
+        function processarInstrucao(rota) {
+            let texto = "";
+            if (rota.length > 1) {
+                texto = `Você está no ${localAtualIA}. Siga para o ${rota[1]}.`;
+            } else if (rota.length === 1) {
+                texto = "Você chegou ao destino!";
+            }
+            document.getElementById("instrucao-texto").innerText = texto;
+            falar(texto);
+        }
+
+        function falar(t) {
+            if (t === ultimaFala) return;
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(t);
+            u.lang = 'pt-BR';
+            window.speechSynthesis.speak(u);
+            ultimaFala = t;
+        }
+    </script>
+</body>
+</html>
