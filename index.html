@@ -3,64 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Indoor - Casa do Dan</title>
+    <title>GPS Indoor - Teste Casa</title>
     <style>
         body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
         #webcam-container { margin: 15px auto; border: 4px solid #00ff88; border-radius: 15px; overflow: hidden; width: 300px; height: 300px; }
         select, button { padding: 15px; font-size: 16px; border-radius: 10px; border: none; margin: 10px; width: 100%; max-width: 300px; }
-        button { background: #00ff88; color: black; font-weight: bold; cursor: pointer; }
-        .status { background: #222; padding: 15px; border-radius: 10px; margin-top: 10px; border-left: 5px solid #00ff88; }
+        button { background: #00ff88; color: black; font-weight: bold; }
+        .status-box { background: #222; padding: 15px; border-radius: 10px; border-left: 5px solid #00ff88; }
+        .destaque { color: #00ff88; font-weight: bold; font-size: 1.2em; }
     </style>
 </head>
 <body>
 
-    <h1>IA Narradora - Guia Residencial</h1>
+    <h1>IA Narradora Pro</h1>
     
-    <label for="destino">Para onde você quer ir?</label><br>
-    <select id="destino" onchange="mudarDestino(this.value)">
-        <option value="Banheiro">Banheiro</option>
-        <option value="Quarto Dan 1">Quarto Dan 1</option>
-        <option value="Quarto Jaque 2">Quarto Jaque 2</option>
-        <option value="Quarto Pais 3">Quarto Pais 3</option>
-        <option value="Cozinha">Cozinha</option>
+    <label>Selecione o Destino:</label><br>
+    <select id="select-destino" onchange="atualizarDestino(this.value)">
+        <option value="banheiro">banheiro</option>
+        <option value="Quarto DAN">Quarto DAN</option>
+        <option value="Quarto jaque">Quarto jaque</option>
+        <option value="cozinha">cozinha</option>
         <option value="Sala">Sala</option>
+        <option value="AREA">AREA</option>
     </select>
 
-    <button onclick="init()">ATIVAR NAVEGAÇÃO</button>
+    <button onclick="init()">INICIAR CÂMERA</button>
 
     <div id="webcam-container"></div>
     
-    <div class="status">
-        <p><strong>Onde estou:</strong> <span id="local-atual">Aguardando...</span></p>
-        <p><strong>Próximo Passo:</strong> <span id="instrucao-texto">Ligue a câmera</span></p>
+    <div class="status-box">
+        <p>Você está em: <span id="local-atual" class="destaque">Aguardando IA...</span></p>
+        <p id="instrucao-texto">Selecione um destino e aponte a câmera.</p>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
 
     <script>
+        // LINK DO SEU MODELO
         const URL = "https://teachablemachine.withgoogle.com/models/7MYV3ZQDM/";
-        let model, webcam, localAtualIA = "", destinoSelecionado = "Banheiro", ultimaFala = "";
 
-        // GRAFO: Conexões e Distâncias baseadas na sua imagem
+        let model, webcam, localAtualIA = "", destinoSelecionado = "banheiro", ultimaFala = "";
+
+        // GRAFO COM NOMES IDÊNTICOS AOS SEUS PRINTS
         const grafoCasa = {
-    "Portão": { "Entrada": 1 },
-    "Entrada": { "Portão": 1, "AREA": 2 },
-    "AREA": { "Entrada": 2, "corredor": 3, "cozinha": 2 },
-    "cozinha": { "AREA": 2, "Despensa": 1, "Sala": 2 },
-    "Despensa": { "cozinha": 1 },
-    "Sala": { "cozinha": 2, "corredor": 1 },
-    "corredor": { 
-        "AREA": 3, 
-        "Sala": 1, 
-        "Quarto DAN": 2, 
-        "Quarto jaque": 3, 
-        "banheiro": 2 
-    },
-    "Quarto DAN": { "corredor": 2 },
-    "Quarto jaque": { "corredor": 3 },
-    "banheiro": { "corredor": 2 }
-};
+            "Portão": { "Entrada": 1 },
+            "Entrada": { "Portão": 1, "AREA": 2 },
+            "AREA": { "Entrada": 2, "corredor": 3, "cozinha": 2 },
+            "cozinha": { "AREA": 2, "Despensa": 1, "Sala": 2 },
+            "Despensa": { "cozinha": 1 },
+            "Sala": { "cozinha": 2, "corredor": 1 },
+            "corredor": { "AREA": 3, "Sala": 1, "Quarto DAN": 2, "Quarto jaque": 3, "banheiro": 2 },
+            "Quarto DAN": { "corredor": 2 },
+            "Quarto jaque": { "corredor": 3 },
+            "banheiro": { "corredor": 2 }
+        };
 
         async function init() {
             model = await tmImage.load(URL + "model.json", URL + "metadata.json");
@@ -69,7 +66,7 @@
             await webcam.play();
             document.getElementById("webcam-container").appendChild(webcam.canvas);
             window.requestAnimationFrame(loop);
-            falar("Sistema de navegação iniciado. Destino definido para " + destinoSelecionado);
+            falar("Navegação iniciada.");
         }
 
         async function loop() {
@@ -78,10 +75,10 @@
             window.requestAnimationFrame(loop);
         }
 
-        function mudarDestino(val) {
+        function atualizarDestino(val) {
             destinoSelecionado = val;
-            falar("Destino alterado para " + val);
-            localAtualIA = ""; // Força recálculo
+            localAtualIA = ""; // Reseta para forçar recálculo
+            falar("Indo para " + val);
         }
 
         async function predict() {
@@ -89,22 +86,35 @@
             let melhorClasse = "";
             let maxProb = 0;
 
+            // Busca a classe com maior confiança
             for (let i = 0; i < model.getTotalClasses(); i++) {
                 if (prediction[i].probability > 0.90) {
                     melhorClasse = prediction[i].className;
                 }
             }
 
-            if (melhorClasse !== "" && melhorClasse !== localAtualIA) {
+            // Se a IA detectou um lugar que existe no nosso grafo
+            if (melhorClasse !== "" && melhorClasse !== localAtualIA && grafoCasa[melhorClasse]) {
                 localAtualIA = melhorClasse;
                 document.getElementById("local-atual").innerText = localAtualIA;
                 
-                const rota = encontrarDijkstra(localAtualIA, destinoSelecionado);
-                processarInstrucao(rota);
+                // EXECUTA O DIJKSTRA
+                const rota = encontrarCaminho(localAtualIA, destinoSelecionado);
+                
+                let texto = "";
+                if (rota.length > 1) {
+                    texto = `Siga para o ${rota[1]}.`;
+                } else if (localAtualIA === destinoSelecionado) {
+                    texto = "Você chegou ao destino!";
+                }
+
+                document.getElementById("instrucao-texto").innerText = texto;
+                falar(texto);
             }
         }
 
-        function encontrarDijkstra(inicio, fim) {
+        // ALGORITMO DIJKSTRA
+        function encontrarCaminho(inicio, fim) {
             let dists = {}, pais = {}, fila = new Set();
             for (let no in grafoCasa) { dists[no] = Infinity; pais[no] = null; fila.add(no); }
             dists[inicio] = 0;
@@ -122,17 +132,6 @@
             let caminho = [], p = fim;
             while (p) { caminho.unshift(p); p = pais[p]; }
             return caminho;
-        }
-
-        function processarInstrucao(rota) {
-            let texto = "";
-            if (rota.length > 1) {
-                texto = `Você está no ${localAtualIA}. Siga para o ${rota[1]}.`;
-            } else if (rota.length === 1) {
-                texto = "Você chegou ao destino!";
-            }
-            document.getElementById("instrucao-texto").innerText = texto;
-            falar(texto);
         }
 
         function falar(t) {
