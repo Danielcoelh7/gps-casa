@@ -3,145 +3,271 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Indoor - Teste Casa</title>
+    <title>Campus Acessível – Classificador de Locais</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
-        #webcam-container { margin: 15px auto; border: 4px solid #00ff88; border-radius: 15px; overflow: hidden; width: 300px; height: 300px; }
-        select, button { padding: 15px; font-size: 16px; border-radius: 10px; border: none; margin: 10px; width: 100%; max-width: 300px; }
-        button { background: #00ff88; color: black; font-weight: bold; }
-        .status-box { background: #222; padding: 15px; border-radius: 10px; border-left: 5px solid #00ff88; }
-        .destaque { color: #00ff88; font-weight: bold; font-size: 1.2em; }
+        html, body { min-height: 100vh; }
+        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; display: flex; flex-direction: column; align-items: center; padding: 20px; text-align: center; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        h1 { font-size: 1.5rem; margin: 10px 0 20px; }
+        button { padding: 12px; border-radius: 12px; border: none; cursor: pointer; font-weight: bold; font-size: 1rem; }
+        .grande { width: 100%; max-width: 450px; min-height: 130px; font-size: 1.3rem; margin-bottom: 12px; }
+        #btn-init { background: #00ff88; color: #000; }
+        #btn-camera { background: #8844ff; color: #fff; }
+        #btn-repetir { background: #ffaa00; color: #000; }
+        #btn-andar { background: #333; color: #fff; min-height: 70px; font-size: 1.1rem; }
+        #painel { width: 100%; max-width: 450px; box-sizing: border-box; padding: 20px; background: #111; border: 2px solid #00ff88; border-radius: 15px; box-shadow: 0 0 15px rgba(0,255,136,0.2); margin-bottom: 14px; }
+        #info { color: #ccc; font-size: 0.95rem; }
+        #local { font-size: 1.8rem; font-weight: bold; color: #00ff88; margin: 10px 0; min-height: 1.4em; text-transform: uppercase; word-break: break-word; }
+        #confianca { color: #888; font-size: 0.9rem; min-height: 1.2em; }
+        #video { display: none; width: 100%; max-width: 450px; border: 3px solid #8844ff; border-radius: 20px; background: #111; margin-bottom: 14px; }
+        #debug { width: 100%; max-width: 450px; box-sizing: border-box; font-size: 0.75rem; background: #222; padding: 10px; border-radius: 8px; text-align: left; border: 1px dashed #555; line-height: 1.5; margin-top: 8px; }
     </style>
 </head>
 <body>
 
-    <h1>IA Narradora Pro</h1>
-    
-    <label>Selecione o Destino:</label><br>
-    <select id="select-destino" onchange="atualizarDestino(this.value)">
-        <option value="banheiro">banheiro</option>
-        <option value="Quarto DAN">Quarto DAN</option>
-        <option value="Quarto jaque">Quarto jaque</option>
-        <option value="cozinha">cozinha</option>
-        <option value="Sala">Sala</option>
-        <option value="AREA">AREA</option>
-    </select>
+    <h1>Classificador de Locais</h1>
 
-    <button onclick="init()">INICIAR CÂMERA</button>
+    <button class="grande" id="btn-init" aria-label="Toque em qualquer lugar da tela para iniciar o sistema">TOQUE EM QUALQUER LUGAR DA TELA PARA COMEÇAR</button>
 
-    <div id="webcam-container"></div>
-    
-    <div class="status-box">
-        <p>Você está em: <span id="local-atual" class="destaque">Aguardando IA...</span></p>
-        <p id="instrucao-texto">Selecione um destino e aponte a câmera.</p>
+    <div id="painel">
+        <div id="info">Aguardando...</div>
+        <div id="local">---</div>
+        <div id="confianca"></div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <video id="video" playsinline muted autoplay></video>
+
+    <div style="width:100%; max-width:450px;">
+        <button class="grande" id="btn-camera">📷 Abrir / fechar câmera</button>
+        <button class="grande" id="btn-repetir">🔁 Repetir local</button>
+        <button class="grande" id="btn-andar">Andar: todos</button>
+    </div>
+
+    <div id="debug">🧠 Painel de diagnóstico: aguardando...</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js"></script>
 
     <script>
-        // LINK DO SEU MODELO
-        const URL = "https://teachablemachine.withgoogle.com/models/7MYV3ZQDM/";
-
-        let model, webcam, localAtualIA = "", destinoSelecionado = "banheiro", ultimaFala = "";
-
-        // GRAFO COM NOMES IDÊNTICOS AOS SEUS PRINTS
-        const grafoCasa = {
-            "Portão": { "Entrada": 1 },
-            "Entrada": { "Portão": 1, "AREA": 2 },
-            "AREA": { "Entrada": 2, "corredor": 3, "cozinha": 2 },
-            "cozinha": { "AREA": 2, "Despensa": 1, "Sala": 2 },
-            "Despensa": { "cozinha": 1 },
-            "Sala": { "cozinha": 2, "corredor": 1 },
-            "corredor": { "AREA": 3, "Sala": 1, "Quarto DAN": 2, "Quarto jaque": 3, "banheiro": 2 },
-            "Quarto DAN": { "corredor": 2 },
-            "Quarto jaque": { "corredor": 3 },
-            "banheiro": { "corredor": 2 }
+        // ================= CONFIGURAÇÕES =================
+        const MODELOS_URLS = {
+            0: "https://teachablemachine.withgoogle.com/models/gPTMKh0iV/",
+            1: "https://teachablemachine.withgoogle.com/models/m8i3tW5uf/",
+            2: "https://teachablemachine.withgoogle.com/models/N6xHCcS5t/"
         };
+        const LIMIAR = 0.90;          // só fala se a IA tiver pelo menos 90% de certeza
+        const CONFIRMACOES = 3;       // o mesmo local precisa aparecer N análises seguidas
+        const INTERVALO_MS = 500;     // intervalo entre análises da câmera
+        const JANELA_TOQUE_DUPLO = 350; // ms entre os dois toques
 
-        async function init() {
-            model = await tmImage.load(URL + "model.json", URL + "metadata.json");
-            webcam = new tmImage.Webcam(300, 300, true);
-            await webcam.setup({ facingMode: "environment" });
-            await webcam.play();
-            document.getElementById("webcam-container").appendChild(webcam.canvas);
-            window.requestAnimationFrame(loop);
-            falar("Navegação iniciada.");
+        // Classes "de ruído" (chão, parede, borrão): a IA pode acertar, mas o app fica em silêncio
+        const RUIDO = /vazio|outros|fundo|ruido|background|nada/;
+
+        // ================= ESTADO =================
+        let modelos = {};
+        let iniciado = false, pronto = false, cameraAtiva = false;
+        let stream = null, laco = null;
+        let andarFiltro = null;                 // null = testa todos os andares
+        let candidato = null, contagem = 0;
+        let ultimoLocal = null, ultimoNome = "";
+
+        const video = document.getElementById("video");
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 224;
+        const ctx = canvas.getContext("2d");
+
+        const semAcento = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        const ehRuido = nome => RUIDO.test(semAcento(nome));
+        const nomeFalado = nome => String(nome).replace(/[_]+/g, " ").trim();
+
+        // ================= VOZ =================
+        const synth = window.speechSynthesis;
+        let vozPreferida = null, falaId = 0;
+        function carregarVozes() {
+            const ptBr = synth.getVoices().filter(v => v.lang === "pt-BR" || v.lang === "pt_BR");
+            if (ptBr.length) vozPreferida = ptBr.find(v => /Google|Francisca|Antonio|Luciana|Felipe/.test(v.name)) || ptBr[0];
+        }
+        carregarVozes();
+        if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = carregarVozes;
+
+        function falar(texto) {
+            const id = ++falaId;
+            synth.cancel();
+            setTimeout(() => {
+                if (id !== falaId) return;
+                const u = new SpeechSynthesisUtterance(texto);
+                u.lang = "pt-BR";
+                if (vozPreferida) u.voice = vozPreferida;
+                u.rate = 1.05;
+                synth.speak(u);
+            }, 80);
+        }
+        function vibrar(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
+
+        // iOS exige um toque do usuário para liberar o áudio
+        function desbloquearAudio() {
+            try { synth.speak(new SpeechSynthesisUtterance("")); } catch (e) {}
         }
 
-        async function loop() {
-            webcam.update();
-            await predict();
-            window.requestAnimationFrame(loop);
+        // ================= MODELOS =================
+        async function carregarModelos() {
+            const lista = [0, 1, 2];
+            const res = await Promise.allSettled(lista.map(i =>
+                tmImage.load(MODELOS_URLS[i] + "model.json", MODELOS_URLS[i] + "metadata.json")));
+            res.forEach((r, i) => { if (r.status === "fulfilled") modelos[lista[i]] = r.value; else console.error("Modelo", i, r.reason); });
+            return Object.keys(modelos).length > 0;
         }
 
-        function atualizarDestino(val) {
-            destinoSelecionado = val;
-            localAtualIA = ""; // Reseta para forçar recálculo
-            falar("Indo para " + val);
+        async function iniciar() {
+            if (iniciado) return;
+            iniciado = true;
+            desbloquearAudio();
+            try { if (navigator.wakeLock) navigator.wakeLock.request("screen").catch(() => {}); } catch (e) {}
+
+            falar("Iniciando. Carregando o sistema, aguarde.");
+            document.getElementById("btn-init").innerText = "CARREGANDO...";
+
+            const ok = await carregarModelos();
+            if (!ok) {
+                iniciado = false;
+                document.getElementById("btn-init").innerText = "TOQUE PARA TENTAR NOVAMENTE";
+                falar("Não consegui carregar o sistema. Verifique a internet e toque na tela para tentar de novo.");
+                return;
+            }
+            document.getElementById("btn-init").style.display = "none";
+            pronto = true;
+            document.getElementById("info").innerText = "Sistema pronto. Dois toques abrem a câmera.";
+            falar("Sistema pronto. Dê dois toques rápidos na tela para abrir a câmera. Depois, um toque repete o último local.");
         }
 
-        async function predict() {
-            const prediction = await model.predict(webcam.canvas);
-            let melhorClasse = "";
-            let maxProb = 0;
+        // ================= CÂMERA CONTÍNUA =================
+        async function abrirCamera() {
+            if (cameraAtiva) return;
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                falar("Seu navegador não permite usar a câmera. Abra o site por H T T P S.");
+                return;
+            }
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+            } catch (e) {
+                falar("Não consegui abrir a câmera. Libere a permissão de câmera nas configurações do navegador.");
+                return;
+            }
+            video.srcObject = stream;
+            try { await video.play(); } catch (e) {}
+            video.style.display = "block";
+            cameraAtiva = true;
+            candidato = null; contagem = 0;
+            document.getElementById("info").innerText = "Câmera aberta. Procurando o local...";
+            vibrar([60]);
+            falar("Câmera aberta. Aponte para a frente.");
+            ciclo();
+        }
 
-            // Busca a classe com maior confiança
-            for (let i = 0; i < model.getTotalClasses(); i++) {
-                if (prediction[i].probability > 0.90) {
-                    melhorClasse = prediction[i].className;
-                }
+        function fecharCamera() {
+            if (!cameraAtiva) return;
+            cameraAtiva = false;
+            clearTimeout(laco);
+            if (stream) stream.getTracks().forEach(t => t.stop());
+            stream = null;
+            video.srcObject = null;
+            video.style.display = "none";
+            document.getElementById("info").innerText = "Câmera fechada. Dois toques abrem de novo.";
+            vibrar([60, 60]);
+            falar("Câmera fechada.");
+        }
+
+        function alternarCamera() { cameraAtiva ? fecharCamera() : abrirCamera(); }
+
+        async function ciclo() {
+            if (!cameraAtiva) return;
+            try {
+                if (!document.hidden && video.videoWidth > 0) await classificar();
+            } catch (e) { console.error(e); }
+            if (cameraAtiva) laco = setTimeout(ciclo, INTERVALO_MS);
+        }
+
+        // ================= CLASSIFICAÇÃO =================
+        async function classificar() {
+            const w = video.videoWidth, h = video.videoHeight, s = Math.min(w, h);
+            ctx.drawImage(video, (w - s) / 2, (h - s) / 2, s, s, 0, 0, 224, 224);
+
+            const andares = andarFiltro === null ? Object.keys(modelos).map(Number) : [andarFiltro];
+            const todos = [];
+            for (const andar of andares) {
+                const m = modelos[andar];
+                if (!m) continue;
+                const pred = await m.predict(canvas);
+                pred.forEach(p => todos.push({ nome: p.className, prob: p.probability, andar }));
+            }
+            if (!todos.length) return;
+            todos.sort((a, b) => b.prob - a.prob);
+            const melhor = todos[0];
+
+            document.getElementById("debug").innerHTML =
+                "🧠 <b>Melhores:</b><br>" + todos.slice(0, 3).map(t =>
+                    `${nomeFalado(t.nome)} (andar ${t.andar + 1}): ${(t.prob * 100).toFixed(0)}%`).join("<br>") +
+                `<br><span style="color:#888;">Limiar ${(LIMIAR * 100).toFixed(0)}% · confirmações ${contagem}/${CONFIRMACOES} · ${andarFiltro === null ? "todos os andares" : (andarFiltro + 1) + "º andar"}</span>`;
+
+            const aceito = (melhor.prob >= LIMIAR && !ehRuido(melhor.nome)) ? (melhor.andar + "|" + melhor.nome) : null;
+
+            if (aceito === null) {
+                candidato = null; contagem = 0;
+                document.getElementById("confianca").innerText = "Procurando... (" + (melhor.prob * 100).toFixed(0) + "%)";
+                return;
             }
 
-            // Se a IA detectou um lugar que existe no nosso grafo
-            if (melhorClasse !== "" && melhorClasse !== localAtualIA && grafoCasa[melhorClasse]) {
-                localAtualIA = melhorClasse;
-                document.getElementById("local-atual").innerText = localAtualIA;
-                
-                // EXECUTA O DIJKSTRA
-                const rota = encontrarCaminho(localAtualIA, destinoSelecionado);
-                
-                let texto = "";
-                if (rota.length > 1) {
-                    texto = `Siga para o ${rota[1]}.`;
-                } else if (localAtualIA === destinoSelecionado) {
-                    texto = "Você chegou ao destino!";
-                }
+            if (aceito === candidato) contagem++; else { candidato = aceito; contagem = 1; }
+            document.getElementById("confianca").innerText = (melhor.prob * 100).toFixed(0) + "% de certeza";
 
-                document.getElementById("instrucao-texto").innerText = texto;
-                falar(texto);
+            if (contagem >= CONFIRMACOES && aceito !== ultimoLocal) {
+                ultimoLocal = aceito;
+                ultimoNome = nomeFalado(melhor.nome);
+                document.getElementById("local").innerText = ultimoNome;
+                document.getElementById("info").innerText = "Local reconhecido";
+                vibrar([120]);
+                falar("Você está em " + ultimoNome + ".");
             }
         }
 
-        // ALGORITMO DIJKSTRA
-        function encontrarCaminho(inicio, fim) {
-            let dists = {}, pais = {}, fila = new Set();
-            for (let no in grafoCasa) { dists[no] = Infinity; pais[no] = null; fila.add(no); }
-            dists[inicio] = 0;
+        function repetirLocal() {
+            if (ultimoNome) falar("Você está em " + ultimoNome + ".");
+            else falar("Ainda não reconheci nenhum local.");
+        }
 
-            while (fila.size > 0) {
-                let u = null;
-                for (let no of fila) if (u === null || dists[no] < dists[u]) u = no;
-                if (u === fim || dists[u] === Infinity) break;
-                fila.delete(u);
-                for (let v in grafoCasa[u]) {
-                    let alt = dists[u] + grafoCasa[u][v];
-                    if (alt < dists[v]) { dists[v] = alt; pais[v] = u; }
-                }
+        function alternarAndar() {
+            andarFiltro = andarFiltro === null ? 0 : (andarFiltro >= 2 ? null : andarFiltro + 1);
+            candidato = null; contagem = 0;
+            const txt = andarFiltro === null ? "todos" : (andarFiltro + 1) + "º";
+            document.getElementById("btn-andar").innerText = "Andar: " + txt;
+            falar(andarFiltro === null ? "Procurando em todos os andares." : "Procurando só no " + (andarFiltro + 1) + "º andar.");
+        }
+
+        // ================= BOTÕES (úteis para quem usa leitor de tela) =================
+        document.getElementById("btn-camera").addEventListener("click", () => { if (pronto) alternarCamera(); });
+        document.getElementById("btn-repetir").addEventListener("click", () => { if (pronto) repetirLocal(); });
+        document.getElementById("btn-andar").addEventListener("click", () => { if (pronto) alternarAndar(); });
+
+        // ================= GESTOS: 2 toques = abre/fecha câmera | 1 toque = repete o local =================
+        let timerToque = null;
+        document.addEventListener("click", (e) => {
+            if (!iniciado) { iniciar(); return; }
+            if (!pronto) return;
+            if (e.target.closest("button")) return;       // botões têm função própria
+
+            if (timerToque) {                              // segundo toque => câmera
+                clearTimeout(timerToque); timerToque = null;
+                alternarCamera();
+            } else {                                       // primeiro toque: espera o segundo
+                timerToque = setTimeout(() => {
+                    timerToque = null;
+                    repetirLocal();
+                }, JANELA_TOQUE_DUPLO);
             }
-            let caminho = [], p = fim;
-            while (p) { caminho.unshift(p); p = pais[p]; }
-            return caminho;
-        }
+        });
 
-        function falar(t) {
-            if (t === ultimaFala) return;
-            window.speechSynthesis.cancel();
-            const u = new SpeechSynthesisUtterance(t);
-            u.lang = 'pt-BR';
-            window.speechSynthesis.speak(u);
-            ultimaFala = t;
-        }
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden && cameraAtiva) fecharCamera(); // economiza bateria e libera a câmera
+        });
     </script>
 </body>
 </html>
