@@ -1,0 +1,44 @@
+name: Baixar bibliotecas e modelos (uso offline)
+
+# Roda só quando você clicar em "Run workflow" na aba Actions.
+on:
+  workflow_dispatch:
+    inputs:
+      pasta:
+        description: "Pasta do repositório onde estão classificador.html e baixar.js (use um ponto para a raiz)"
+        required: true
+        default: "classificador"
+
+permissions:
+  contents: write
+
+jobs:
+  baixar:
+    runs-on: ubuntu-latest
+    env:
+      PASTA: ${{ inputs.pasta }}
+    steps:
+      - name: Copiar o repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar o Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Baixar bibliotecas e modelos
+        run: |
+          cd "$PASTA"
+          node baixar.js
+
+      - name: Guardar os arquivos no repositório
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$PASTA/lib" "$PASTA/modelos"
+          if git diff --cached --quiet; then
+            echo "Nada novo para guardar."
+          else
+            git commit -m "Adiciona bibliotecas e modelos para uso offline"
+            git push
+          fi
